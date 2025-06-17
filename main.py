@@ -145,12 +145,13 @@ unicorn.set_brightness(0.4)
 clear_display()
 
 print(f"Connecting to {secrets.MQTT_BROKER}:{secrets.MQTT_PORT}")
-client = MQTTClient("stellarunicornsp1", secrets.MQTT_BROKER, secrets.MQTT_PORT) # TODO remove hard coded client ID.
+client = MQTTClient(secrets.MQTT_CLIENT_NAME, secrets.MQTT_BROKER, secrets.MQTT_PORT) # TODO remove hard coded client ID.
 client.DEBUG = True
 client.set_callback(msg_receiver)
 client.connect()
 print(f"Subscribing to topic...")
-client.subscribe(b"simongrafana/cheerlights")
+client.subscribe(secrets.MQTT_TOPIC)
+#client.subscribe(b"simongrafana/cheerlights")
 print("Waiting for messages.")
 
 while True:
