@@ -156,8 +156,13 @@ print("Waiting for messages.")
 while True:
     # If we had something else to do we could replace this with
     # a sleep loop and client.check_msg()
-    client.wait_msg()
-    # time.sleep(1)
-    # print(f"alive {time.ticks_ms()}")
+    #client.wait_msg()
+    try:
+        client.check_msg()
+        time.sleep(1)
+        print(f"alive {time.ticks_ms()}")
+    except Exception as e:
+        print("Something went wrong!")
+        print(e)
 
     
