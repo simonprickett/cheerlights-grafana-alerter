@@ -1,10 +1,9 @@
+import asyncio
 import json
-import network
 import secrets
-import time
 
 from picographics import PicoGraphics
-from umqtt.robust import MQTTClient
+from mqtt_as import MQTTClient, config
 
 try:
     from stellar import StellarUnicorn as Unicorn
@@ -44,18 +43,11 @@ MAX_Y = PREVIOUS_COLOR_BLOCK_SIZE * (PREVIOUS_COLORS_PER_ROW - 1)
 
 recent_colors = []
 
-# Connect to the network.
-wlan = network.WLAN(network.STA_IF)
-wlan.active(True)
-wlan.connect(secrets.WIFI_SSID, secrets.WIFI_PASSWORD) 
-
-while not wlan.isconnected() and wlan.status() >= 0:
-    print("Connecting to wifi...")
-    time.sleep(1)
-
-ip_address = wlan.ifconfig()[0]
-print(f"Connected with IP address {ip_address}")
-
+# Configure MQTT library
+config["ssid"] = secrets.WIFI_SSID
+config["wifi_pw"] = secrets.WIFI_PASSWORD
+config["server"] = secrets.MQTT_BROKER
+config["queue_len"] = 1
 
 def clear_display():
     display.set_pen(PENS["black"])
@@ -67,7 +59,7 @@ def show_current_color(color_name):
     display.rectangle(CURRENT_COLOR_X, CURRENT_COLOR_Y, CURRENT_COLOR_BLOCK_SIZE, CURRENT_COLOR_BLOCK_SIZE)
     unicorn.update(display)
 
-def show_previous_colors(color_names):
+async def show_previous_colors(color_names):
     x = 0
     y = 0
 
@@ -84,7 +76,7 @@ def show_previous_colors(color_names):
 
         display.rectangle(x, y, PREVIOUS_COLOR_BLOCK_SIZE, PREVIOUS_COLOR_BLOCK_SIZE)
         unicorn.update(display)
-        time.sleep(0.5)
+        await asyncio.sleep(0.5)
 
         if x == MAX_X:
             # Go down the right of the display now.
@@ -105,65 +97,67 @@ def show_previous_colors(color_names):
         y = y + y_incr
 
 
-def msg_receiver(topic, msg):
+async def messages(client):
     global recent_colors
 
-    json_data = json.loads(msg.decode("utf-8"))
+    async for topic, msg, retained in client.queue:
+        json_data = json.loads(msg.decode("utf-8"))
 
-    try:
-        latest_alert_starts_at = 0
-        latest_alert_index = -1
+        try:
+            latest_alert_starts_at = 0
+            latest_alert_index = -1
 
-        for idx, alert in enumerate(json_data["alerts"]):
-            starts_at = alert["startsAt"]
+            for idx, alert in enumerate(json_data["alerts"]):
+                starts_at = alert["startsAt"]
 
-            if starts_at > latest_alert_starts_at:
-                print(f"Found new latest alert at {idx}:")
-                print(alert)
-                latest_alert_starts_at = starts_at
-                latest_alert_index = idx
-            else:
-                print(f"Ignoring older alert that starts at {starts_at}")
+                if starts_at > latest_alert_starts_at:
+                    print(f"Found new latest alert at {idx}:")
+                    print(alert)
+                    latest_alert_starts_at = starts_at
+                    latest_alert_index = idx
+                else:
+                    print(f"Ignoring older alert that starts at {starts_at}")
 
-        new_color = json_data['alerts'][latest_alert_index]['labels']['color']
-        print(f"Latest color: {new_color}")
+            new_color = json_data['alerts'][latest_alert_index]['labels']['color']
+            print(f"Latest color: {new_color}")
 
-        recent_colors.insert(0, new_color)
+            recent_colors.insert(0, new_color)
 
-        # Trim the list if needed.
-        recent_colors = recent_colors[:TOTAL_COLOR_BLOCKS]
+            # Trim the list if needed.
+            recent_colors = recent_colors[:TOTAL_COLOR_BLOCKS]
 
-        show_current_color(recent_colors[0])
-        show_previous_colors(recent_colors[1:])
+            show_current_color(recent_colors[0])
+            await show_previous_colors(recent_colors[1:])
 
-    except Exception:
-        print("Bad message received:")
-        print(json_data)
+        except Exception:
+            print("Bad message received:")
+            print(json_data)
+
+async def up(client):
+    while True:
+        await client.up.wait()
+        client.up.clear()
+        print(f"Subscribing to topic: {secrets.MQTT_TOPIC}")
+        await client.subscribe(secrets.MQTT_TOPIC, 1)
+
+async def main(client):
+    await client.connect()
+    for coroutine in (up, messages):
+        asyncio.create_task(coroutine(client))
+
+    while True:
+        await asyncio.sleep(5)
+        # TODO other stuff?
+        print("ok")
 
 
 unicorn.set_brightness(0.4)
 clear_display()
 
-print(f"Connecting to {secrets.MQTT_BROKER}:{secrets.MQTT_PORT}")
-client = MQTTClient(secrets.MQTT_CLIENT_NAME, secrets.MQTT_BROKER, secrets.MQTT_PORT) # TODO remove hard coded client ID.
-client.DEBUG = True
-client.set_callback(msg_receiver)
-client.connect()
-print(f"Subscribing to topic...")
-client.subscribe(secrets.MQTT_TOPIC)
-#client.subscribe(b"simongrafana/cheerlights")
-print("Waiting for messages.")
+MQTTClient.DEBUG = True
+client = MQTTClient(config)
 
-while True:
-    # If we had something else to do we could replace this with
-    # a sleep loop and client.check_msg()
-    #client.wait_msg()
-    try:
-        client.check_msg()
-        time.sleep(1)
-        print(f"alive {time.ticks_ms()}")
-    except Exception as e:
-        print("Something went wrong!")
-        print(e)
-
-    
+try:
+    asyncio.run(main(client))
+finally:
+    client.close()

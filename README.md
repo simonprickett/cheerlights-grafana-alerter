@@ -18,8 +18,10 @@ TODO
 
 ### Install Dependencies
 
+The code uses Peter Hinch's [MicroPython MQTT client](https://github.com/peterhinch/micropython-mqtt/).
+
 ```bash
-mpremote mip install umqtt.robust
+mpremote mip install github:peterhinch/micropython-mqtt
 ```
 
 ### Configure Secrets
