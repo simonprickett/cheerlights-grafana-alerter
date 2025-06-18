@@ -13,6 +13,7 @@ except ImportError:
     from picographics import DISPLAY_COSMIC_UNICORN as DISPLAY
 
 unicorn = Unicorn()
+
 display = PicoGraphics(DISPLAY)
 DISPLAY_WIDTH = Unicorn.WIDTH
 DISPLAY_HEIGHT = Unicorn.HEIGHT
@@ -32,6 +33,7 @@ PENS = {
     "pink": display.create_pen(255, 192, 203)
 }
 
+
 TOTAL_COLOR_BLOCKS = 13
 PREVIOUS_COLORS_PER_ROW = 4
 PREVIOUS_COLOR_BLOCK_SIZE = DISPLAY_WIDTH // PREVIOUS_COLORS_PER_ROW
@@ -48,6 +50,8 @@ config["ssid"] = secrets.WIFI_SSID
 config["wifi_pw"] = secrets.WIFI_PASSWORD
 config["server"] = secrets.MQTT_BROKER
 config["queue_len"] = 1
+
+latest_entry_id = 0
 
 def clear_display():
     display.set_pen(PENS["black"])
@@ -98,37 +102,45 @@ async def show_previous_colors(color_names):
 
 
 async def messages(client):
-    global recent_colors
+    global recent_colors, latest_entry_id
 
     async for topic, msg, retained in client.queue:
         json_data = json.loads(msg.decode("utf-8"))
 
         try:
-            latest_alert_starts_at = 0
-            latest_alert_index = -1
+            sorted_alerts = sorted(json_data["alerts"], key=lambda a: a["labels"]["entryId"])
+            print(sorted_alerts)
+            for alert in sorted_alerts:
+                entry_id = int(alert["labels"]["entryId"])
 
-            for idx, alert in enumerate(json_data["alerts"]):
-                starts_at = alert["startsAt"]
-
-                if starts_at > latest_alert_starts_at:
-                    print(f"Found new latest alert at {idx}:")
+                # Find newer firing alerts that are named cheerlights-updated.
+                if (entry_id > latest_entry_id) and alert["status"] == "firing" and alert["labels"]["alertname"] == "cheerlights-updated":
+                    print("Found new firing cheerlights-updated alert:")
                     print(alert)
-                    latest_alert_starts_at = starts_at
-                    latest_alert_index = idx
+                    latest_entry_id = entry_id
+
+                    new_color = alert["labels"]["color"]
+                    print(f"Latest color: {new_color}")
+
+                    recent_colors.insert(0, new_color)
+
+                    # Trim the list if needed.
+                    recent_colors = recent_colors[:TOTAL_COLOR_BLOCKS]
+
+                    show_current_color(recent_colors[0])
+                    await show_previous_colors(recent_colors[1:])
+
                 else:
-                    print(f"Ignoring older alert that starts at {starts_at}")
-
-            new_color = json_data['alerts'][latest_alert_index]['labels']['color']
-            print(f"Latest color: {new_color}")
-
-            recent_colors.insert(0, new_color)
-
-            # Trim the list if needed.
-            recent_colors = recent_colors[:TOTAL_COLOR_BLOCKS]
-
-            show_current_color(recent_colors[0])
-            await show_previous_colors(recent_colors[1:])
-
+                    print("Ignoring this alert:")
+                    print(alert)
+                    
+                    if entry_id <= latest_entry_id:
+                        print("Reason: entry_id <= latest_entry_id")
+                    if alert["status"] != "firing":
+                        print(f"Reason: status was {alert['status']}")
+                    if alert["labels"]["alertname"] != "cheerlights-updated":
+                        print(f"Reason: alertname was {alert['labels']['alertname']}")
+                    
         except Exception:
             print("Bad message received:")
             print(json_data)
