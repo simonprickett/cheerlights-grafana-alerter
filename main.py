@@ -33,7 +33,6 @@ PENS = {
     "pink": display.create_pen(255, 192, 203)
 }
 
-
 TOTAL_COLOR_BLOCKS = 13
 PREVIOUS_COLORS_PER_ROW = 4
 PREVIOUS_COLOR_BLOCK_SIZE = DISPLAY_WIDTH // PREVIOUS_COLORS_PER_ROW
@@ -71,7 +70,7 @@ async def show_previous_colors(color_names):
     x_incr = PREVIOUS_COLOR_BLOCK_SIZE
     y_incr = 0
 
-    for counter, color_name in enumerate(color_names):
+    for color_name in color_names:
         try:
             display.set_pen(PENS[color_name])
         except KeyError:
