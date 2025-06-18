@@ -12,6 +12,24 @@ TODO
 
 TODO
 
+jsonata expression:
+
+```
+$map(feeds^(>entry_id), function($v) {
+  return {
+    "howLongAgo": $millis() - $toMillis($v.created_at),
+    "color": $v.field1,
+    "entryId": $formatNumber($v.entry_id, '#')
+  }
+})
+```
+
+with filter:
+
+```
+howLongAgo <= 90000
+```
+
 ## Unicorn Setup
 
 TODO
